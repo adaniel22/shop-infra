@@ -1,14 +1,162 @@
-services:
+services: # ===== ADATBÁZISOK =====
+  auth-db:
+    image: postgres:16-alpine
+    container_name: auth-db
+    environment:
+      POSTGRES_USER: ${AUTH_DB_USER}
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD}
+      POSTGRES_DB: ${AUTH_DB_NAME}
+    ports:
+      - "5432:5432"
+    volumes:
+      - auth-db-data:/var/lib/postgresql/data
+    networks:
+      - shop-network
+    restart: unless-stopped
+
+  catalog-db:
+    image: postgres:16-alpine
+    container_name: catalog-db
+    environment:
+      POSTGRES_USER: ${CATALOG_DB_USER}
+      POSTGRES_PASSWORD: ${CATALOG_DB_PASSWORD}
+      POSTGRES_DB: ${CATALOG_DB_NAME}
+    ports:
+      - "5433:5432"
+    volumes:
+      - catalog-db-data:/var/lib/postgresql/data
+    networks:
+      - shop-network
+    restart: unless-stopped
+
+  order-db:
+    image: postgres:16-alpine
+    container_name: order-db
+    environment:
+      POSTGRES_USER: ${ORDER_DB_USER}
+      POSTGRES_PASSWORD: ${ORDER_DB_PASSWORD}
+      POSTGRES_DB: ${ORDER_DB_NAME}
+    ports:
+      - "5434:5432"
+    volumes:
+      - order-db-data:/var/lib/postgresql/data
+    networks:
+      - shop-network
+    restart: unless-stopped
+
+  auth-service:
+    build: ../auth-service
+    container_name: auth-service
+    ports:
+      - "3000:3000"
+    environment:
+      DB_HOST: auth-db
+      DB_PORT: 5432
+      DB_USER: ${AUTH_DB_USER}
+      DB_PASSWORD: ${AUTH_DB_PASSWORD}
+      DB_NAME: ${AUTH_DB_NAME}
+      PORT: 3000
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_REFRESH_EXPIRES: ${JWT_REFRESH_EXPIRES}
+    depends_on:
+      - auth-db
+    networks:
+      - shop-network
+    restart: unless-stopped
+
+  catalog-service:
+    build: ../catalog-service
+    container_name: catalog-service
+    ports:
+      - "3001:3001"
+    environment:
+      DB_HOST: catalog-db
+      DB_PORT: 5432
+      DB_USER: ${CATALOG_DB_USER}
+      DB_PASSWORD: ${CATALOG_DB_PASSWORD}
+      DB_NAME: ${CATALOG_DB_NAME}
+      PORT: 3001
+    depends_on:
+      - catalog-db
+    networks:
+      - shop-network
+    restart: unless-stopped
+
+  order-service:
+    build: ../order-service
+    container_name: order-service
+    ports:
+      - "3002:3002"
+    environment:
+      DB_HOST: order-db
+      DB_PORT: 5432
+      DB_USER: ${ORDER_DB_USER}
+      DB_PASSWORD: ${ORDER_DB_PASSWORD}
+      DB_NAME: ${ORDER_DB_NAME}
+      PORT: 3002
+      CATALOG_SERVICE_URL: http://catalog-service:3001
+      NATS_URL: nats://shop-nats:4222
+    depends_on:
+      - order-db
+      - catalog-service
+      - nats
+    networks:
+      - shop-network
+    restart: unless-stopped
+
+  api-gateway:
+    build: ../api-gateway
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      JWT_SECRET: ${JWT_SECRET}
+      AUTH_SERVICE_URL: http://auth-service:3000
+      CATALOG_SERVICE_URL: http://catalog-service:3001
+      ORDER_SERVICE_URL: http://order-service:3002
+    depends_on:
+      - auth-service
+      - catalog-service
+      - order-service
+    networks:
+      - shop-network
+    restart: unless-stopped
+
+  notification-service:
+    build: ../notification-service
+    container_name: notification-service
+    environment:
+      APP_NAME: Laravel
+      APP_ENV: production
+      APP_KEY: ${APP_KEY}
+      APP_DEBUG: "false"
+      LOG_CHANNEL: stderr
+      NATS_HOST: shop-nats
+      NATS_PORT: 4222
+    depends_on:
+      - nats
+    networks:
+      - shop-network
+    restart: unless-stopped
+
+  # ===== NATS =====
   nats:
     image: nats:2.10-alpine
     container_name: shop-nats
-    command: ["--jetstream", "--http_port", "8222"]
+    command: [ "--jetstream", "--http_port", "8222" ]
     ports:
       - "4222:4222"
       - "8222:8222"
     networks:
       - shop-network
     restart: unless-stopped
+
+volumes:
+  auth-db-data:
+  catalog-db-data:
+  order-db-data:
 
 networks:
   shop-network:
